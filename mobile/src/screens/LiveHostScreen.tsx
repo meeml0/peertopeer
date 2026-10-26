@@ -52,6 +52,9 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const localStream = useRef<MediaStream | null>(null);
   const webVideoRef = useRef<any>(null);
+  const cameraRef = useRef<any>(null);
+  const frameIntervalRef = useRef<any>(null);
+  const isStreamingRef = useRef<boolean>(true);
 
   // 1. İzinleri ve Yayını Başlat
   useEffect(() => {
@@ -94,6 +97,7 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
     }
 
     setStreamId(stream.id);
+    startFrameBroadcaster(stream.id);
 
     // Socket sunucusuna bildir
     if (socket) {
@@ -141,7 +145,45 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
     }
   };
 
-  // Yeni gelen izleyiciye WebRTC Offer gönder
+  // 2. Canlı Video Karesi Yayınlayıcı (Expo Go ve Web için kesintisiz görüntü)
+  const startFrameBroadcaster = (sId: string) => {
+    isStreamingRef.current = true;
+
+    // Web ortamı için canvas üzerinden hızlı frame üretimi
+    if (Platform.OS === 'web') {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      frameIntervalRef.current = setInterval(() => {
+        if (!isStreamingRef.current || !webVideoRef.current || !ctx) return;
+        if (webVideoRef.current.videoWidth > 0) {
+          canvas.width = 320;
+          canvas.height = (webVideoRef.current.videoHeight / webVideoRef.current.videoWidth) * 320;
+          ctx.drawImage(webVideoRef.current, 0, 0, canvas.width, canvas.height);
+          const frameData = canvas.toDataURL('image/jpeg', 0.4);
+          socket?.emit('stream_frame', { streamId: sId, frameData });
+        }
+      }, 150); // Saniyede ~7 frame (akıcı ve ultra düşük gecikme)
+    } else {
+      // Mobil Expo Camera üzerinden anlık hızlı kare üretimi
+      frameIntervalRef.current = setInterval(async () => {
+        if (!isStreamingRef.current || !cameraRef.current) return;
+        try {
+          const photo = await cameraRef.current.takePictureAsync({
+            quality: 0.2,
+            base64: true,
+            skipProcessing: true,
+            shutterSound: false,
+          });
+          if (photo?.base64 && isStreamingRef.current) {
+            const frameData = `data:image/jpeg;base64,${photo.base64}`;
+            socket?.emit('stream_frame', { streamId: sId, frameData });
+          }
+        } catch (e) {
+          // Frame atlama
+        }
+      }, 350);
+    }
+  };
   const createOfferForViewer = async (sId: string, viewerSocketId: string) => {
     if (typeof RTCPeerConnection === 'undefined') return;
 
@@ -208,6 +250,12 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
   };
 
   const handleEndStream = async () => {
+    isStreamingRef.current = false;
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+
     if (streamId) {
       socket?.emit('end_live_stream', { streamId });
       await liveStreamService.endStream(streamId);
@@ -241,7 +289,7 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
             style={{ width: '100%', height: '100%', objectFit: 'cover', transform: facing === 'front' ? 'scaleX(-1)' : 'none' }}
           />
         ) : (
-          <CameraView style={StyleSheet.absoluteFillObject} facing={facing} />
+          <CameraView ref={cameraRef} style={StyleSheet.absoluteFillObject} facing={facing} />
         )}
       </View>
 

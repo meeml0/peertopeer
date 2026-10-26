@@ -93,14 +93,17 @@ export const liveStreamService = {
   },
 
   /**
-   * Aktif canlı yayınları çeker
+   * Aktif canlı yayınları çeker (Sadece gerçekten son 2 saat içinde açılmış ve is_live=true olanlar)
    */
   async getActiveStreams(): Promise<LiveStream[]> {
     try {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
       const { data, error } = await supabase
         .from('live_streams')
         .select('*, profiles:host_id(id, full_name, avatar_url, username)')
         .eq('is_live', true)
+        .gte('created_at', twoHoursAgo)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

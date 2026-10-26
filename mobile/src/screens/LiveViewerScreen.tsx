@@ -46,6 +46,7 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
   const [viewerCount, setViewerCount] = useState(0);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
+  const [currentFrame, setCurrentFrame] = useState<string | null>(null);
 
   const peerConnection = useRef<any>(null);
   const remoteVideoRef = useRef<any>(null);
@@ -87,6 +88,13 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
       streamId,
       viewerId: user.id,
       hostId: hostUser.id,
+    });
+
+    // Yayıncının Canlı Video Karesi Geldiğinde (Anlık Görüntü)
+    socket.on('stream_frame_received', ({ frameData }: { frameData: string }) => {
+      if (frameData) {
+        setCurrentFrame(frameData);
+      }
     });
 
     // Yayıncıdan WebRTC teklifi (Offer) geldiğinde
@@ -236,9 +244,15 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
   // 3. Canlı Yayın İzleme Ekranı
   return (
     <SafeAreaView style={styles.container}>
-      {/* Yayıncının Medya Akışı */}
+      {/* Yayıncının Canlı Video Akışı */}
       <View style={StyleSheet.absoluteFillObject}>
-        {Platform.OS === 'web' ? (
+        {currentFrame ? (
+          <Image
+            source={{ uri: currentFrame }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : Platform.OS === 'web' ? (
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -261,7 +275,7 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
             <Text style={styles.mobilePlaceholderText}>{hostUser?.full_name}</Text>
             <View style={styles.liveAudioBadge}>
               <View style={styles.liveDot} />
-              <Text style={styles.liveAudioText}>Canlı Yayın Dinleniyor / Bağlandı</Text>
+              <Text style={styles.liveAudioText}>Kamera Görüntüsü Yükleniyor...</Text>
             </View>
           </View>
         )}

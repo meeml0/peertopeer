@@ -19,6 +19,8 @@ const io = new Server(server, {
 // Map of userId -> socketId and socketId -> userId
 const onlineUsers = new Map(); // userId -> socketId
 const socketToUser = new Map(); // socketId -> userId
+const activeStreams = new Map(); // streamId -> { hostId, hostSocketId }
+const socketToStream = new Map(); // socketId -> streamId
 
 app.get('/', (req, res) => {
   res.send({ status: 'Signaling Server Running', onlineCount: onlineUsers.size });
@@ -122,10 +124,19 @@ io.on('connection', (socket) => {
   socket.on('start_live_stream', ({ streamId, hostId }) => {
     const roomName = `stream_${streamId}`;
     socket.join(roomName);
+    activeStreams.set(streamId, { hostId, hostSocketId: socket.id });
+    socketToStream.set(socket.id, streamId);
     console.log(`[Live Stream Started] Stream: ${streamId} by Host: ${hostId} (Socket: ${socket.id})`);
     
     // Tüm kullanıcılara yeni bir canlı yayın başladığını duyur (UI'da kırmızı canlı halkası için)
     io.emit('live_stream_status_changed', { streamId, hostId, status: 'started' });
+  });
+
+  // 1.1 Yayıncının Canlı Video Karesi Göndermesi (Expo Go / Cross-Platform Anlık Akış)
+  socket.on('stream_frame', ({ streamId, frameData }) => {
+    const roomName = `stream_${streamId}`;
+    // Odaya yayıncının karesini anında fırlat (yayıncının kendisi hariç)
+    socket.to(roomName).emit('stream_frame_received', { frameData });
   });
 
   // 2. İzleyicinin Yayın Odasına Katılması
@@ -210,6 +221,8 @@ io.on('connection', (socket) => {
   socket.on('end_live_stream', ({ streamId }) => {
     const roomName = `stream_${streamId}`;
     console.log(`[Live Stream Ended] Stream: ${streamId}`);
+    activeStreams.delete(streamId);
+    socketToStream.delete(socket.id);
     io.to(roomName).emit('stream_ended', { streamId });
     io.sockets.adapter.rooms.delete(roomName);
     io.emit('live_stream_status_changed', { streamId, status: 'ended' });
@@ -217,6 +230,16 @@ io.on('connection', (socket) => {
 
   // Disconnect
   socket.on('disconnect', () => {
+    // Eğer yayıncı bağlantıyı kopardıysa (uygulamayı kapattıysa) yayını otomatik bitir!
+    const activeStreamId = socketToStream.get(socket.id);
+    if (activeStreamId) {
+      console.log(`[Host Disconnected] Canlı yayın otomatik bitiriliyor: ${activeStreamId}`);
+      activeStreams.delete(activeStreamId);
+      socketToStream.delete(socket.id);
+      io.to(`stream_${activeStreamId}`).emit('stream_ended', { streamId: activeStreamId });
+      io.emit('live_stream_status_changed', { streamId: activeStreamId, status: 'ended' });
+    }
+
     const userId = socketToUser.get(socket.id);
     if (userId) {
       onlineUsers.delete(userId);

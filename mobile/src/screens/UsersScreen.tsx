@@ -135,10 +135,16 @@ export const UsersScreen = ({ navigation }: any) => {
       });
     }
 
+    // Sayfa her odaklandığında canlı yayınları yeniden tara (eski yayınlar kalmasın)
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      fetchActiveStreams();
+    });
+
     return () => {
       socket?.off('live_stream_status_changed');
+      unsubscribeFocus();
     };
-  }, []);
+  }, [navigation]);
 
   const fetchActiveStreams = async () => {
     const streams = await liveStreamService.getActiveStreams();
