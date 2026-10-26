@@ -151,11 +151,12 @@ io.on('connection', (socket) => {
   });
 
   // 3. Yayıncının İzleyiciye WebRTC Offer Göndermesi
-  socket.on('stream_offer_to_viewer', ({ streamId, viewerSocketId, offer }) => {
+  socket.on('stream_offer_to_viewer', ({ streamId, viewerSocketId, hostSocketId, offer }) => {
     const hostUserId = socketToUser.get(socket.id);
     io.to(viewerSocketId).emit('stream_offer_received', {
       streamId,
       hostUserId,
+      hostSocketId: hostSocketId || socket.id,
       offer
     });
   });

@@ -416,7 +416,7 @@ export const UsersScreen = ({ navigation }: any) => {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.activeStripContent}
             >
-              {/* Aktif Canlı Yayın Yapan Kullanıcılar */}
+              {/* Canlı Yayın Yapan Kullanıcılar */}
               {activeLiveStreams.map((stream) => {
                 const hostProfile = stream.profiles || { full_name: 'Yayıncı', username: 'host', avatar_url: '' };
                 const isMyStream = stream.host_id === user?.id;
@@ -456,14 +456,17 @@ export const UsersScreen = ({ navigation }: any) => {
                         <Text style={styles.liveBadgeText}>CANLI</Text>
                       </View>
                     </View>
-                    <Text style={[styles.activeUsername, { color: '#ff2d55', fontWeight: 'bold' }]} numberOfLines={1}>
-                      {isMyStream ? 'Yayınınız' : hostProfile.full_name || hostProfile.username}
+                    <Text style={[styles.activeUsername, { color: '#ffffff', fontWeight: 'bold' }]} numberOfLines={1}>
+                      {isMyStream ? 'Sen' : hostProfile.full_name || hostProfile.username}
+                    </Text>
+                    <Text style={styles.liveStatusSubtext} numberOfLines={1}>
+                      Canlı Yayında
                     </Text>
                   </TouchableOpacity>
                 );
               })}
 
-              {/* Çevrimiçi Kullanıcılar */}
+              {/* Normal Çevrimiçi Kullanıcılar */}
               {liveOnlineUsers.map((u) => {
                 // Eğer zaten canlı yayında listeleniyorsa tekrar listeleme
                 if (activeLiveStreams.some((s) => s.host_id === u.id)) return null;
@@ -494,6 +497,9 @@ export const UsersScreen = ({ navigation }: any) => {
                     </View>
                     <Text style={styles.activeUsername} numberOfLines={1}>
                       {u.username}
+                    </Text>
+                    <Text style={styles.onlineStatusSubtext} numberOfLines={1}>
+                      Çevrimiçi
                     </Text>
                   </TouchableOpacity>
                 );
@@ -674,19 +680,54 @@ export const UsersScreen = ({ navigation }: any) => {
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
+              renderItem={({ item }) => {
+                const isUserLive = activeLiveStreams.find((s) => s.host_id === item.id);
+                return (
                 <TouchableOpacity
                   style={styles.userCard}
-                  onPress={() => startChat(item)}
+                  onPress={() => {
+                    if (isUserLive) {
+                      navigation.navigate('LiveViewer', {
+                        streamId: isUserLive.id,
+                        hostUser: item,
+                      });
+                    } else {
+                      startChat(item);
+                    }
+                  }}
                   activeOpacity={0.75}
                 >
-                  {/* Avatar (Tıklandığında Profil Vitrinini Açar) */}
+                  {/* Avatar (Tıklandığında Canlı Yayındaysa Yayına, Değilse Profil Vitrinine Açar) */}
                   <TouchableOpacity
                     style={styles.avatarBox}
-                    onPress={() => openUserProfile(item)}
+                    onPress={() => {
+                      if (isUserLive) {
+                        navigation.navigate('LiveViewer', {
+                          streamId: isUserLive.id,
+                          hostUser: item,
+                        });
+                      } else {
+                        openUserProfile(item);
+                      }
+                    }}
                     activeOpacity={0.8}
                   >
-                    {item.avatar_url ? (
+                    {isUserLive ? (
+                      <LinearGradient
+                        colors={['#ff2d55', '#ff007f']}
+                        style={[styles.avatarBox, { padding: 2.5, borderRadius: 28 }]}
+                      >
+                        {item.avatar_url ? (
+                          <Image source={{ uri: item.avatar_url }} style={[styles.avatarGradient, { width: 47, height: 47, borderRadius: 24 }]} />
+                        ) : (
+                          <View style={[styles.avatarGradient, { width: 47, height: 47, borderRadius: 24, backgroundColor: '#0f172a' }]}>
+                            <Text style={styles.avatarText}>
+                              {item.username?.charAt(0)?.toUpperCase() || 'U'}
+                            </Text>
+                          </View>
+                        )}
+                      </LinearGradient>
+                    ) : item.avatar_url ? (
                       <Image source={{ uri: item.avatar_url }} style={styles.avatarGradient} />
                     ) : (
                       <LinearGradient
@@ -700,7 +741,13 @@ export const UsersScreen = ({ navigation }: any) => {
                         </Text>
                       </LinearGradient>
                     )}
-                    {onlineUserIds.has(item.id) && <View style={styles.onlineBadge} />}
+                    {isUserLive ? (
+                      <View style={styles.liveBadgeSmallFloating}>
+                        <Text style={styles.liveBadgeSmallText}>CANLI</Text>
+                      </View>
+                    ) : onlineUserIds.has(item.id) && (
+                      <View style={styles.onlineBadge} />
+                    )}
                   </TouchableOpacity>
 
                   {/* User Info */}
@@ -714,15 +761,21 @@ export const UsersScreen = ({ navigation }: any) => {
                       )}
                     </View>
                     <View style={styles.lastMsgRow}>
-                      <Text
-                        style={[
-                          styles.userHandle,
-                          item.unreadCount > 0 && styles.unreadMessageHighlight,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {item.lastMessage ? item.lastMessage : `@${item.username} • Sohbeti başlat`}
-                      </Text>
+                      {isUserLive ? (
+                        <Text style={styles.liveCardHighlightText} numberOfLines={1}>
+                          🔴 Canlı Yayında • Katılmak için dokunun
+                        </Text>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.userHandle,
+                            item.unreadCount > 0 && styles.unreadMessageHighlight,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.lastMessage ? item.lastMessage : `@${item.username} • Sohbeti başlat`}
+                        </Text>
+                      )}
                       {item.unreadCount > 0 && (
                         <View style={styles.unreadBadge}>
                           <Text style={styles.unreadBadgeText}>
@@ -733,24 +786,41 @@ export const UsersScreen = ({ navigation }: any) => {
                     </View>
                   </View>
 
-                  {/* Eylem Butonları: Hem Sesli Hem Görüntülü Arama */}
+                  {/* Eylem Butonları: Canlı Yayındaysa 'İzle', Değilse Sesli/Görüntülü Arama */}
                   <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.audioActionBtn]}
-                      onPress={() => startCall(item, 'audio')}
-                    >
-                      <Phone size={17} color="#06b6d4" />
-                    </TouchableOpacity>
+                    {isUserLive ? (
+                      <TouchableOpacity
+                        style={styles.joinLiveCardBtn}
+                        onPress={() =>
+                          navigation.navigate('LiveViewer', {
+                            streamId: isUserLive.id,
+                            hostUser: item,
+                          })
+                        }
+                      >
+                        <Text style={styles.joinLiveCardBtnText}>İzle</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.audioActionBtn]}
+                          onPress={() => startCall(item, 'audio')}
+                        >
+                          <Phone size={17} color="#06b6d4" />
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.callActionBtn]}
-                      onPress={() => startCall(item, 'video')}
-                    >
-                      <Video size={17} color="#34d399" />
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.callActionBtn]}
+                          onPress={() => startCall(item, 'video')}
+                        >
+                          <Video size={17} color="#34d399" />
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 </TouchableOpacity>
-              )}
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Sparkles size={36} color="#475569" style={{ marginBottom: 12 }} />
@@ -926,6 +996,54 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     textAlign: 'center',
+  },
+  liveStatusSubtext: {
+    color: '#ff2d55',
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  onlineStatusSubtext: {
+    color: '#10b981',
+    fontSize: 9,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  liveBadgeSmallFloating: {
+    position: 'absolute',
+    bottom: -3,
+    alignSelf: 'center',
+    backgroundColor: '#ff2d55',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#07090e',
+  },
+  liveBadgeSmallText: {
+    color: '#ffffff',
+    fontSize: 7,
+    fontWeight: '900',
+  },
+  liveCardHighlightText: {
+    color: '#ff4d6d',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  joinLiveCardBtn: {
+    backgroundColor: '#ff2d55',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  joinLiveCardBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   segmentContainer: {
     flexDirection: 'row',

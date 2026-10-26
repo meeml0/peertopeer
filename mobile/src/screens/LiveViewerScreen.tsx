@@ -47,8 +47,9 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
 
-  const peerConnection = useRef<RTCPeerConnection | null>(null);
+  const peerConnection = useRef<any>(null);
   const remoteVideoRef = useRef<any>(null);
+  const hostSocketRef = useRef<string | null>(null);
 
   // 1. Takip Kontrolü ve Yetkilendirme
   useEffect(() => {
@@ -89,9 +90,12 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
     });
 
     // Yayıncıdan WebRTC teklifi (Offer) geldiğinde
-    socket.on('stream_offer_received', async ({ offer, hostUserId }: any) => {
+    socket.on('stream_offer_received', async ({ offer, hostUserId, hostSocketId }: any) => {
       console.log('[Viewer] Yayıncıdan offer alındı, yanıt hazırlanıyor...');
-      await handleOfferFromHost(offer);
+      if (hostSocketId) {
+        hostSocketRef.current = hostSocketId;
+      }
+      await handleOfferFromHost(offer, hostSocketId);
     });
 
     // ICE Candidate
@@ -123,7 +127,7 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
     });
   };
 
-  const handleOfferFromHost = async (offer: any) => {
+  const handleOfferFromHost = async (offer: any, hostSocketId?: string) => {
     if (typeof RTCPeerConnection === 'undefined') return;
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -141,7 +145,7 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
         socket.emit('stream_ice_candidate', {
-          targetSocketId: null, // Sunucu host'a yönlendirecek
+          targetSocketId: hostSocketId || hostSocketRef.current,
           candidate: event.candidate,
         });
       }
@@ -243,11 +247,22 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
           />
         ) : (
           <View style={[StyleSheet.absoluteFillObject, styles.mobilePlaceholder]}>
-            <Image
-              source={{ uri: hostUser?.avatar_url || 'https://via.placeholder.com/150' }}
-              style={styles.hostAvatarBig}
-            />
-            <Text style={styles.mobilePlaceholderText}>{hostUser?.full_name} Canlı Yayında</Text>
+            <View style={styles.pulseLiveContainer}>
+              <LinearGradient
+                colors={['#ff2d55', '#ff007f']}
+                style={styles.avatarLiveHalo}
+              >
+                <Image
+                  source={{ uri: hostUser?.avatar_url || 'https://via.placeholder.com/150' }}
+                  style={styles.hostAvatarBig}
+                />
+              </LinearGradient>
+            </View>
+            <Text style={styles.mobilePlaceholderText}>{hostUser?.full_name}</Text>
+            <View style={styles.liveAudioBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveAudioText}>Canlı Yayın Dinleniyor / Bağlandı</Text>
+            </View>
           </View>
         )}
       </View>
@@ -439,21 +454,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   mobilePlaceholder: {
-    backgroundColor: '#0a0e17',
+    backgroundColor: '#07090e',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  hostAvatarBig: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 3,
-    borderColor: '#ff2d55',
+  pulseLiveContainer: {
     marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarLiveHalo: {
+    width: 124,
+    height: 124,
+    borderRadius: 62,
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hostAvatarBig: {
+    width: 114,
+    height: 114,
+    borderRadius: 57,
   },
   mobilePlaceholderText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  liveAudioBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 45, 85, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 45, 85, 0.4)',
+  },
+  liveAudioText: {
+    color: '#ff4d6d',
+    fontSize: 12,
     fontWeight: '600',
   },
   bottomArea: {

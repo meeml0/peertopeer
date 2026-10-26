@@ -174,6 +174,7 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
       socket?.emit('stream_offer_to_viewer', {
         streamId: sId,
         viewerSocketId,
+        hostSocketId: socket.id,
         offer,
       });
     } catch (e) {
