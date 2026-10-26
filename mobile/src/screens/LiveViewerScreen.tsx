@@ -135,11 +135,12 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
       await handleOfferFromHost(offer, hostSocketId);
     });
 
-    // ICE Candidate
+    // Yayıncıdan ICE Candidate geldiğinde
     socket.on('stream_ice_candidate', async ({ candidate }: any) => {
       if (peerConnection.current && candidate) {
         try {
           await peerConnection.current.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('[Viewer] ICE Candidate başarıyla eklendi');
         } catch (e) {
           console.error('[Viewer] ICE Candidate hatası:', e);
         }
@@ -171,10 +172,12 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
     peerConnection.current = pc;
 
     pc.ontrack = (event) => {
-      console.log('[Viewer] Yayıncının medya akışı yakalandı:', event.streams);
+      console.log('[Viewer] Yayıncının ses/video akışı yakalandı:', event.streams);
       const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = stream;
+        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.volume = 1.0;
         remoteVideoRef.current.play().catch((e: any) => console.warn('Otomatik oynatma:', e));
       }
     };
@@ -190,7 +193,10 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
 
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
+      const answer = await pc.createAnswer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
       await pc.setLocalDescription(answer);
 
       // Cevabı sunucu üzerinden host'a ilet
@@ -273,22 +279,33 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
   // 3. Canlı Yayın İzleme Ekranı
   return (
     <SafeAreaView style={styles.container} {...panResponder.panHandlers}>
-      {/* Yayıncının Canlı Video Akışı */}
+      {/* Yayıncının Canlı Video Akışı & Kesintisiz Ses Çalıcısı */}
       <View style={StyleSheet.absoluteFillObject}>
+        {Platform.OS === 'web' && (
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            controls={false}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1,
+              height: 1,
+              opacity: 0.01,
+              zIndex: -1,
+            }}
+          />
+        )}
+
         {currentFrame ? (
           <Image
             source={{ uri: currentFrame }}
             style={{ width: '100%', height: '100%' }}
             resizeMode="cover"
           />
-        ) : Platform.OS === 'web' ? (
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : (
+        ) : Platform.OS === 'web' ? null : (
           <View style={[StyleSheet.absoluteFillObject, styles.mobilePlaceholder]}>
             <View style={styles.pulseLiveContainer}>
               <LinearGradient

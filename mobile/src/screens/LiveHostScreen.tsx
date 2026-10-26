@@ -101,6 +101,19 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
   const initHostStream = async () => {
     if (!user) return;
 
+    // Web'de ses akışının kesinlikle hazır olduğundan emin ol
+    if (Platform.OS === 'web' && (!localStream.current || localStream.current.getAudioTracks().length === 0)) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream.current = stream;
+        if (webVideoRef.current) {
+          webVideoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        console.warn('Yayıncı mikrofon/kamera alınamadı:', err);
+      }
+    }
+
     // Supabase kaydı oluştur
     const { stream, error } = await liveStreamService.createStream(user.id, title);
     if (error || !stream) {
@@ -221,8 +234,8 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
 
     try {
       const offer = await pc.createOffer({
-        offerToReceiveAudio: false,
-        offerToReceiveVideo: false,
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
       });
       await pc.setLocalDescription(offer);
 
