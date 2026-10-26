@@ -24,10 +24,12 @@ import {
   Heart,
   Image as ImageIcon,
   Users as UsersIcon,
+  Radio,
 } from 'lucide-react-native';
 
 import { PulsCoinBadge } from '../components/PulsCoinBadge';
 import { socketService } from '../services/socket';
+import { liveStreamService, LiveStream } from '../services/liveStream';
 import { formatChatListTime } from '../utils/dateUtils';
 
 const { width } = Dimensions.get('window');
@@ -48,6 +50,9 @@ export const UsersScreen = ({ navigation }: any) => {
   // Beğeni Durumları ve Sayıları
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<string>>(new Set());
   const [likesCountMap, setLikesCountMap] = useState<Record<string, number>>({});
+
+  // Aktif Canlı Yayınlar
+  const [activeLiveStreams, setActiveLiveStreams] = useState<LiveStream[]>([]);
   const lastTapRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -115,8 +120,30 @@ export const UsersScreen = ({ navigation }: any) => {
       supabase.removeChannel(channel);
       socket?.off('online_users_list');
       socket?.off('user_status_changed');
+      socket?.off('live_stream_status_changed');
     };
   }, [user]);
+
+  // Canlı Yayınları Çek ve Dinle
+  useEffect(() => {
+    fetchActiveStreams();
+
+    const socket = socketService.getSocket();
+    if (socket) {
+      socket.on('live_stream_status_changed', () => {
+        fetchActiveStreams();
+      });
+    }
+
+    return () => {
+      socket?.off('live_stream_status_changed');
+    };
+  }, []);
+
+  const fetchActiveStreams = async () => {
+    const streams = await liveStreamService.getActiveStreams();
+    setActiveLiveStreams(streams);
+  };
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -351,6 +378,16 @@ export const UsersScreen = ({ navigation }: any) => {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {/* Canlı Yayın Başlat Butonu */}
+          <TouchableOpacity
+            style={styles.liveStartBtn}
+            onPress={() => navigation.navigate('LiveHost', { title: 'Canlı Yayın' })}
+            activeOpacity={0.8}
+          >
+            <Radio size={16} color="#ffffff" style={{ marginRight: 4 }} />
+            <Text style={styles.liveStartText}>Yayın Aç</Text>
+          </TouchableOpacity>
+
           <PulsCoinBadge balance={pulscoinBalance} />
           <TouchableOpacity
             style={styles.settingsGlassBtn}
@@ -362,22 +399,76 @@ export const UsersScreen = ({ navigation }: any) => {
         </View>
       </View>
 
-      {/* Aktif Kişiler Şeridi (Stories / SADECE CANLI Çevrimiçi Kişiler) */}
+      {/* Aktif Kişiler & Canlı Yayınlar Şeridi (Stories) */}
       {(() => {
         const liveOnlineUsers = users.filter((u) => onlineUserIds.has(u.id));
         return (
           <View style={styles.activeStripContainer}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Çevrimiçi Kişiler</Text>
+              <Text style={styles.sectionTitle}>
+                {activeLiveStreams.length > 0 ? '🔴 Canlı Yayınlar & Çevrimiçi' : 'Çevrimiçi Kişiler'}
+              </Text>
               <Text style={styles.onlineCountText}>{liveOnlineUsers.length} aktif</Text>
             </View>
-            {liveOnlineUsers.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.activeStripContent}
-              >
-                {liveOnlineUsers.map((u) => (
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.activeStripContent}
+            >
+              {/* Aktif Canlı Yayın Yapan Kullanıcılar */}
+              {activeLiveStreams.map((stream) => {
+                const hostProfile = stream.profiles || { full_name: 'Yayıncı', username: 'host', avatar_url: '' };
+                const isMyStream = stream.host_id === user?.id;
+
+                return (
+                  <TouchableOpacity
+                    key={`stream_${stream.id}`}
+                    style={styles.activeUserItem}
+                    onPress={() => {
+                      if (isMyStream) {
+                        navigation.navigate('LiveHost', { streamId: stream.id, title: stream.title });
+                      } else {
+                        navigation.navigate('LiveViewer', {
+                          streamId: stream.id,
+                          hostUser: hostProfile,
+                        });
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.activeAvatarWrapper}>
+                      <LinearGradient
+                        colors={['#ff2d55', '#ff007f']}
+                        style={[styles.activeAvatarRing, { padding: 3 }]}
+                      >
+                        {hostProfile.avatar_url ? (
+                          <Image source={{ uri: hostProfile.avatar_url }} style={styles.activeAvatarInner} />
+                        ) : (
+                          <View style={[styles.activeAvatarInner, { backgroundColor: '#1e1b4b' }]}>
+                            <Text style={styles.activeAvatarLetter}>
+                              {hostProfile.full_name?.charAt(0)?.toUpperCase() || 'L'}
+                            </Text>
+                          </View>
+                        )}
+                      </LinearGradient>
+                      <View style={styles.liveBadgeFloating}>
+                        <Text style={styles.liveBadgeText}>CANLI</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.activeUsername, { color: '#ff2d55', fontWeight: 'bold' }]} numberOfLines={1}>
+                      {isMyStream ? 'Yayınınız' : hostProfile.full_name || hostProfile.username}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* Çevrimiçi Kullanıcılar */}
+              {liveOnlineUsers.map((u) => {
+                // Eğer zaten canlı yayında listeleniyorsa tekrar listeleme
+                if (activeLiveStreams.some((s) => s.host_id === u.id)) return null;
+
+                return (
                   <TouchableOpacity
                     key={u.id}
                     style={styles.activeUserItem}
@@ -405,13 +496,9 @@ export const UsersScreen = ({ navigation }: any) => {
                       {u.username}
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.noOnlineContainer}>
-                <Text style={styles.noOnlineText}>Şu an çevrimiçi başka kullanıcı yok</Text>
-              </View>
-            )}
+                );
+              })}
+            </ScrollView>
           </View>
         );
       })()}
@@ -738,6 +825,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  liveStartBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ff2d55',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  liveStartText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  liveBadgeFloating: {
+    position: 'absolute',
+    bottom: -4,
+    alignSelf: 'center',
+    backgroundColor: '#ff2d55',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#07090e',
+  },
+  liveBadgeText: {
+    color: '#ffffff',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   activeStripContainer: {
     marginBottom: 14,

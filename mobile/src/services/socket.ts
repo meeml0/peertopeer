@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 
-// Bilgisayarınızın yerel IP adresi (aynı Wi-Fi üzerindeki telefonlar erişebilsin)
-const SIGNALING_SERVER_URL = process.env.EXPO_PUBLIC_SIGNALING_URL || 'http://192.168.1.136:5000';
+// Canlı 7/24 Bulut Sinyalleşme Sunucusu (Render.com)
+const SIGNALING_SERVER_URL =
+  process.env.EXPO_PUBLIC_SIGNALING_URL || 'https://peertopeer-wtu1.onrender.com';
 
 class SocketService {
   private socket: Socket | null = null;

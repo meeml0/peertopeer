@@ -8,6 +8,8 @@ import { ChatScreen } from './src/screens/ChatScreen';
 import { CallScreen } from './src/screens/CallScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { UserProfileScreen } from './src/screens/UserProfileScreen';
+import { LiveHostScreen } from './src/screens/LiveHostScreen';
+import { LiveViewerScreen } from './src/screens/LiveViewerScreen';
 import { IncomingCallModal } from './src/components/IncomingCallModal';
 import { ActivityIndicator, View } from 'react-native';
 
@@ -52,6 +54,8 @@ function NavigationRoot() {
             <Stack.Screen name="Call" component={CallScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+            <Stack.Screen name="LiveHost" component={LiveHostScreen} />
+            <Stack.Screen name="LiveViewer" component={LiveViewerScreen} />
           </>
         )}
       </Stack.Navigator>
