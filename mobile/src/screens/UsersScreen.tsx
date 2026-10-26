@@ -148,7 +148,14 @@ export const UsersScreen = ({ navigation }: any) => {
 
   const fetchActiveStreams = async () => {
     const streams = await liveStreamService.getActiveStreams();
-    setActiveLiveStreams(streams);
+    // Aynı kullanıcının birden fazla yayını varsa tekile indir (en günceli kalsın)
+    const uniqueStreamsMap = new Map<string, LiveStream>();
+    for (const s of streams) {
+      if (!uniqueStreamsMap.has(s.host_id)) {
+        uniqueStreamsMap.set(s.host_id, s);
+      }
+    }
+    setActiveLiveStreams(Array.from(uniqueStreamsMap.values()));
   };
 
   useEffect(() => {
@@ -367,14 +374,18 @@ export const UsersScreen = ({ navigation }: any) => {
       {/* Modern Glass Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <LinearGradient
-            colors={['#6366f1', '#a855f7']}
-            style={styles.myAvatarBadge}
-          >
-            <Text style={styles.myAvatarLetter}>
-              {profile?.username?.charAt(0)?.toUpperCase() || 'U'}
-            </Text>
-          </LinearGradient>
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.myAvatarBadge} />
+          ) : (
+            <LinearGradient
+              colors={['#6366f1', '#a855f7']}
+              style={styles.myAvatarBadge}
+            >
+              <Text style={styles.myAvatarLetter}>
+                {profile?.username?.charAt(0)?.toUpperCase() || 'U'}
+              </Text>
+            </LinearGradient>
+          )}
           <View>
             <Text style={styles.welcomeText}>Hoş Geldin,</Text>
             <Text style={styles.userNameHeader}>

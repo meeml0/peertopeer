@@ -21,10 +21,18 @@ export interface LiveStream {
  */
 export const liveStreamService = {
   /**
-   * Yeni bir canlı yayın kaydı oluşturur
+   * Yeni bir canlı yayın kaydı oluşturur (Öncesinde bu kullanıcının eski açık kalmış yayınlarını kapatır!)
    */
   async createStream(hostId: string, title: string = 'Canlı Yayın'): Promise<{ stream: LiveStream | null; error: any }> {
     try {
+      // 1. Bu kullanıcının açık kalmış tüm eski hayalet yayınlarını kapat
+      await supabase
+        .from('live_streams')
+        .update({ is_live: false, ended_at: new Date().toISOString() })
+        .eq('host_id', hostId)
+        .eq('is_live', true);
+
+      // 2. Yeni temiz yayını oluştur
       const { data, error } = await supabase
         .from('live_streams')
         .insert({

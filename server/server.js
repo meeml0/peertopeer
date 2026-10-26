@@ -21,6 +21,16 @@ const onlineUsers = new Map(); // userId -> socketId
 const socketToUser = new Map(); // socketId -> userId
 const activeStreams = new Map(); // streamId -> { hostId, hostSocketId }
 const socketToStream = new Map(); // socketId -> streamId
+const streamViewers = new Map(); // streamId -> Set<socketId>
+
+// Yardımcı: Bir odadaki anlık izleyici sayısını hesaplayıp tüm odaya ve host'a duyur
+function broadcastViewerCount(streamId) {
+  const roomName = `stream_${streamId}`;
+  const viewersSet = streamViewers.get(streamId);
+  const count = viewersSet ? viewersSet.size : 0;
+  io.to(roomName).emit('stream_viewer_count', { streamId, count });
+  console.log(`[Viewer Count Update] Stream: ${streamId} -> ${count} izleyici`);
+}
 
 app.get('/', (req, res) => {
   res.send({ status: 'Signaling Server Running', onlineCount: onlineUsers.size });
@@ -139,11 +149,23 @@ io.on('connection', (socket) => {
     socket.to(roomName).emit('stream_frame_received', { frameData });
   });
 
+  // 1.2 Yayıncının Canlı Ses Verisi Göndermesi (Canlı Mikrofon Sesi)
+  socket.on('stream_audio', ({ streamId, audioData }) => {
+    const roomName = `stream_${streamId}`;
+    socket.to(roomName).emit('stream_audio_received', { audioData });
+  });
+
   // 2. İzleyicinin Yayın Odasına Katılması
   socket.on('join_live_stream', ({ streamId, viewerId, hostId }) => {
     const roomName = `stream_${streamId}`;
     socket.join(roomName);
     console.log(`[Viewer Joined] Viewer: ${viewerId} joined ${roomName}`);
+
+    // İzleyiciyi Set'e kaydet
+    if (!streamViewers.has(streamId)) {
+      streamViewers.set(streamId, new Set());
+    }
+    streamViewers.get(streamId).add(socket.id);
 
     // Yayıncıya bu izleyicinin katıldığını bildir ki yayıncı ona WebRTC Offer gönderebilsin
     const hostSocketId = onlineUsers.get(hostId);
@@ -155,10 +177,8 @@ io.on('connection', (socket) => {
       });
     }
 
-    // Odadaki izleyici sayısını güncelle
-    const room = io.sockets.adapter.rooms.get(roomName);
-    const viewerCount = room ? Math.max(0, room.size - 1) : 0; // Host hariç
-    io.to(roomName).emit('stream_viewer_count', { streamId, count: viewerCount });
+    // Odadaki izleyici sayısını anında herkese duyur
+    broadcastViewerCount(streamId);
   });
 
   // 3. Yayıncının İzleyiciye WebRTC Offer Göndermesi
@@ -212,9 +232,10 @@ io.on('connection', (socket) => {
   socket.on('leave_live_stream', ({ streamId }) => {
     const roomName = `stream_${streamId}`;
     socket.leave(roomName);
-    const room = io.sockets.adapter.rooms.get(roomName);
-    const viewerCount = room ? Math.max(0, room.size - 1) : 0;
-    io.to(roomName).emit('stream_viewer_count', { streamId, count: viewerCount });
+    if (streamViewers.has(streamId)) {
+      streamViewers.get(streamId).delete(socket.id);
+    }
+    broadcastViewerCount(streamId);
   });
 
   // 8. Yayıncının Yayını Sonlandırması
@@ -223,6 +244,7 @@ io.on('connection', (socket) => {
     console.log(`[Live Stream Ended] Stream: ${streamId}`);
     activeStreams.delete(streamId);
     socketToStream.delete(socket.id);
+    streamViewers.delete(streamId);
     io.to(roomName).emit('stream_ended', { streamId });
     io.sockets.adapter.rooms.delete(roomName);
     io.emit('live_stream_status_changed', { streamId, status: 'ended' });
@@ -230,12 +252,21 @@ io.on('connection', (socket) => {
 
   // Disconnect
   socket.on('disconnect', () => {
+    // İzleyici olarak bir yayındaysa Set'ten çıkar ve sayıyı güncelle
+    for (const [sId, viewers] of streamViewers.entries()) {
+      if (viewers.has(socket.id)) {
+        viewers.delete(socket.id);
+        broadcastViewerCount(sId);
+      }
+    }
+
     // Eğer yayıncı bağlantıyı kopardıysa (uygulamayı kapattıysa) yayını otomatik bitir!
     const activeStreamId = socketToStream.get(socket.id);
     if (activeStreamId) {
       console.log(`[Host Disconnected] Canlı yayın otomatik bitiriliyor: ${activeStreamId}`);
       activeStreams.delete(activeStreamId);
       socketToStream.delete(socket.id);
+      streamViewers.delete(activeStreamId);
       io.to(`stream_${activeStreamId}`).emit('stream_ended', { streamId: activeStreamId });
       io.emit('live_stream_status_changed', { streamId: activeStreamId, status: 'ended' });
     }

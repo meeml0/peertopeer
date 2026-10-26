@@ -13,8 +13,10 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   Image,
+  PanResponder,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
 import { Users, X, Send, Heart, Lock, ShieldAlert } from 'lucide-react-native';
 import { socketService } from '../services/socket';
 import { liveStreamService } from '../services/liveStream';
@@ -51,9 +53,36 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
   const peerConnection = useRef<any>(null);
   const remoteVideoRef = useRef<any>(null);
   const hostSocketRef = useRef<string | null>(null);
+  const chatListRef = useRef<FlatList>(null);
+
+  // Ekranı aşağı kaydırınca yayından çıkma (Swipe Down to Dismiss)
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Aşağıya doğru en az 25px dikey kaydırma varsa ve yataydan belirgin fazlaysa yakala
+        return gestureState.dy > 25 && Math.abs(gestureState.dx) < 40;
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 80) {
+          navigation.goBack();
+        }
+      },
+    })
+  ).current;
 
   // 1. Takip Kontrolü ve Yetkilendirme
   useEffect(() => {
+    (async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (e) {}
+    })();
+
     checkPermissionAndConnect();
 
     return () => {
@@ -129,7 +158,7 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
 
     // Yayıncı yayını sonlandırdığında
     socket.on('stream_ended', () => {
-      Alert.alert('Yayın Bitti', 'Yayıncı canlı yayını sonlandırdı.', [
+      Alert.alert('Canlı Yayın Sonlandı', 'Yayıncı canlı yayını sonlandırdı.', [
         { text: 'Tamam', onPress: () => navigation.goBack() },
       ]);
     });
@@ -243,7 +272,7 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
 
   // 3. Canlı Yayın İzleme Ekranı
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} {...panResponder.panHandlers}>
       {/* Yayıncının Canlı Video Akışı */}
       <View style={StyleSheet.absoluteFillObject}>
         {currentFrame ? (
@@ -316,13 +345,21 @@ export const LiveViewerScreen = ({ route, navigation }: any) => {
       {/* Alt Bölüm: Canlı Chat & Beğeni */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
         style={styles.bottomArea}
       >
         <View style={styles.chatListContainer}>
           <FlatList
+            ref={chatListRef}
             data={chatMessages}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => {
+              chatListRef.current?.scrollToEnd({ animated: true });
+            }}
+            onLayout={() => {
+              chatListRef.current?.scrollToEnd({ animated: true });
+            }}
             renderItem={({ item }) => (
               <View style={styles.chatBubble}>
                 <Text style={styles.chatSender}>{item.senderName}: </Text>
@@ -513,11 +550,10 @@ const styles = StyleSheet.create({
   },
   bottomArea: {
     position: 'absolute',
-    bottom: 0,
+    bottom: Platform.OS === 'ios' ? 40 : 25,
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
     zIndex: 10,
   },
   chatListContainer: {

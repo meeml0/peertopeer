@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Users, SwitchCamera, Mic, MicOff, X, Send, Heart } from 'lucide-react-native';
 import { socketService } from '../services/socket';
@@ -55,12 +56,24 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
   const cameraRef = useRef<any>(null);
   const frameIntervalRef = useRef<any>(null);
   const isStreamingRef = useRef<boolean>(true);
+  const chatListRef = useRef<FlatList>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const audioIntervalRef = useRef<any>(null);
 
   // 1. İzinleri ve Yayını Başlat
   useEffect(() => {
     (async () => {
       if (!permission?.granted) {
         await requestPermission();
+      }
+      try {
+        await Audio.requestPermissionsAsync();
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+      } catch (audioErr) {
+        console.warn('Audio izni alınamadı:', audioErr);
       }
       initHostStream();
     })();
@@ -255,6 +268,16 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
       clearInterval(frameIntervalRef.current);
       frameIntervalRef.current = null;
     }
+    if (audioIntervalRef.current) {
+      clearInterval(audioIntervalRef.current);
+      audioIntervalRef.current = null;
+    }
+    if (recordingRef.current) {
+      try {
+        await recordingRef.current.stopAndUnloadAsync();
+      } catch (e) {}
+      recordingRef.current = null;
+    }
 
     if (streamId) {
       socket?.emit('end_live_stream', { streamId });
@@ -300,11 +323,25 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
         pointerEvents="box-none"
       />
 
-      {/* Üst Bar: Canlı Rozeti, İzleyici Sayısı, Kapat Butonu */}
+      {/* Üst Bar: Host Bilgisi (Sol Üst), Canlı Rozeti, İzleyici Sayısı, Kapat Butonu */}
       <View style={styles.topHeader}>
-        <View style={styles.liveIndicator}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>CANLI</Text>
+        <View style={styles.hostInfo}>
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.hostAvatar} />
+          ) : (
+            <LinearGradient colors={['#ff2d55', '#ff007f']} style={styles.hostAvatar}>
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>
+                {profile?.username?.charAt(0)?.toUpperCase() || 'Y'}
+              </Text>
+            </LinearGradient>
+          )}
+          <View>
+            <Text style={styles.hostName}>{profile?.full_name || profile?.username || 'Ben'}</Text>
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>CANLI</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.viewerBadge}>
@@ -330,13 +367,21 @@ export const LiveHostScreen = ({ route, navigation }: any) => {
       {/* Alt Bölüm: Canlı Yorum Akışı ve Mesaj Yazma */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
         style={styles.bottomArea}
       >
         <View style={styles.chatListContainer}>
           <FlatList
+            ref={chatListRef}
             data={chatMessages}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => {
+              chatListRef.current?.scrollToEnd({ animated: true });
+            }}
+            onLayout={() => {
+              chatListRef.current?.scrollToEnd({ animated: true });
+            }}
             renderItem={({ item }) => (
               <View style={styles.chatBubble}>
                 <Text style={styles.chatSender}>{item.senderName}: </Text>
@@ -377,14 +422,29 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? 30 : 10,
     zIndex: 10,
   },
+  hostInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  hostAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    marginRight: 10,
+    borderWidth: 1.5,
+    borderColor: '#ff2d55',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hostName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
   liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ff2d55',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 10,
+    marginTop: 2,
   },
   liveDot: {
     width: 6,
@@ -405,6 +465,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
+    marginLeft: 'auto',
+    marginRight: 10,
   },
   viewerText: {
     color: '#fff',
@@ -440,11 +502,10 @@ const styles = StyleSheet.create({
   },
   bottomArea: {
     position: 'absolute',
-    bottom: 0,
+    bottom: Platform.OS === 'ios' ? 40 : 25,
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
     zIndex: 10,
   },
   chatListContainer: {
